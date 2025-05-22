@@ -1,123 +1,42 @@
-# GitHub Actions Workflow for Building palen1xon
+name: Build palen1x
 
-name: Build palen1xon # Workflow name
-
-# Trigger the workflow manually from the Actions tab
 on:
   workflow_dispatch:
 
 jobs:
   build:
     strategy:
-      fail-fast: false # Continue other jobs in the matrix even if one fails
+      fail-fast: false
       matrix:
-        arch: [ amd64, i686, aarch64, armv7 ] # Define the architectures to build for
-    runs-on: ubuntu-latest # Use the latest Ubuntu runner
-
+        arch: [ x86_64, x86, aarch64, armv7 ]
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3 # Checks out your repository's code
+      - name: Checkout
+        uses: actions/checkout@v3
 
-      - name: Get version from file
-        id: version # Give this step an ID to reference its outputs
-        run: |
-          # Reads the version from a file named 'version' in the repository root
-          VERSION_VALUE=$(cat version)
-          # Set VERSION as an environment variable for subsequent run scripts in this job
-          echo "VERSION=${VERSION_VALUE}" >> $GITHUB_ENV
-          # Set version_tag as an output for other steps in this job or dependent jobs
-          echo "version_tag=${VERSION_VALUE}" >> $GITHUB_OUTPUT
-          echo "Successfully read version: ${VERSION_VALUE}"
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(cat version)" >> $GITHUB_ENV
 
-      - name: Install QEMU for multi-architecture support
+      - name: Install qemu-user-static
         run: |
-          # QEMU is needed for building or running binaries for different architectures
-          # on the default amd64 runner.
-          echo "Updating package lists..."
           sudo apt-get update
-          echo "Installing qemu-user-static..."
           sudo apt-get install -y qemu-user-static
-          echo "QEMU installation complete."
 
-      - name: Build for ${{ matrix.arch }}
+      - name: Build
         env:
-          ARCH: ${{ matrix.arch }} # Set the ARCH environment variable for the build script
-          # VERSION is available from the 'Get version' step via $GITHUB_ENV
+          ARCH: ${{ matrix.arch }}
         run: |
-          echo "Starting build for ${{ matrix.arch }} with Version: $VERSION"
-          # Execute the build script. The -E flag preserves existing environment variables,
-          # including ARCH and VERSION.
-          sudo -E ./build.sh RELEASE
-          echo "Build script completed for ${{ matrix.arch }}"
+          sudo -E ./build.sh
 
-      - name: Prepare artifact for ${{ matrix.arch }}
-        id: prepare_artifact # Give this step an ID to reference its outputs
+      - name: Prepare artifact
         run: |
-          echo "Preparing artifacts for ${{ matrix.arch }}..."
-          # Create a temporary, unique staging directory for artifacts for this specific architecture
-          ARTIFACT_STAGING_DIR="palen1x_artifact_stage_${{ matrix.arch }}"
-          mkdir -p "${ARTIFACT_STAGING_DIR}"
-          echo "Created staging directory: ${ARTIFACT_STAGING_DIR}"
+          mkdir palen1x
+          cp work/*.iso palen1x
+          cp work/iso/boot/initramfs.xz palen1x/initramfs-${{ matrix.arch }}.xz
 
-          # Define target artifact filenames for clarity and consistency
-          TARGET_ISO_FILENAME="palen1x-${{ matrix.arch }}.iso"
-          TARGET_INITRAMFS_FILENAME="initramfs-${{ matrix.arch }}.xz"
-          
-          # Locate the ISO file produced by the build script.
-          # Assumes build.sh outputs an ISO into 'work/' with a pattern like 'anyname-${{ matrix.arch }}.iso'
-          # Using a glob to find the ISO and handling cases where it might not be found or multiple are found.
-          ISO_CANDIDATES=(work/*-${{ matrix.arch }}.iso)
-
-          if [ ${#ISO_CANDIDATES[@]} -eq 0 ]; then
-            echo "::error::ISO file not found in work/ for arch ${{ matrix.arch }} matching pattern *-${{ matrix.arch }}.iso"
-            echo "Contents of work/ directory:"
-            ls -lA work/
-            exit 1 # Fail the step if the primary artifact (ISO) is missing
-          elif [ ${#ISO_CANDIDATES[@]} -gt 1 ]; then
-            echo "::warning::Multiple ISO files found matching pattern *-${{ matrix.arch }}.iso. Using the first one: ${ISO_CANDIDATES[0]}"
-            echo "All found ISOs:"
-            printf '%s\n' "${ISO_CANDIDATES[@]}"
-          fi
-          
-          BUILD_ISO_FILE="${ISO_CANDIDATES[0]}" # Select the first match
-          echo "Found ISO: ${BUILD_ISO_FILE}"
-          
-          # Copy and rename the ISO to the staging directory
-          cp "${BUILD_ISO_FILE}" "${ARTIFACT_STAGING_DIR}/${TARGET_ISO_FILENAME}"
-          echo "Copied ISO to ${ARTIFACT_STAGING_DIR}/${TARGET_ISO_FILENAME}"
-
-          # Handle the initramfs file.
-          # Assumes the build script places the relevant initramfs for the current architecture
-          # at 'work/iso/boot/initramfs.xz' after each architecture's build.
-          INITRAMFS_SOURCE_PATH="work/iso/boot/initramfs.xz"
-          if [ -f "${INITRAMFS_SOURCE_PATH}" ]; then
-            cp "${INITRAMFS_SOURCE_PATH}" "${ARTIFACT_STAGING_DIR}/${TARGET_INITRAMFS_FILENAME}"
-            echo "Copied initramfs to ${ARTIFACT_STAGING_DIR}/${TARGET_INITRAMFS_FILENAME}"
-            echo "initramfs_prepared=true" >> $GITHUB_OUTPUT # Output to indicate initramfs is ready
-          else
-            echo "::warning::Initramfs source file not found at ${INITRAMFS_SOURCE_PATH}."
-            echo "The initramfs file will not be included in the artifact for ${{ matrix.arch }}."
-            echo "initramfs_prepared=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "Artifact preparation complete for ${{ matrix.arch }}."
-          echo "Contents of staging directory ${ARTIFACT_STAGING_DIR}:"
-          ls -lA "${ARTIFACT_STAGING_DIR}"
-
-      - name: Upload Artifact for ${{ matrix.arch }}
-        uses: actions/upload-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-artifact@main
         with:
-          # Create a uniquely named artifact for each architecture's build output
-          name: palen1xon-build-${{ matrix.arch }} 
-          # Path to the files within the staging directory for this architecture
-          # This lists both expected files. if-no-files-found will handle missing ones.
-          path: |
-            palen1x_artifact_stage_${{ matrix.arch }}/palen1x-${{ matrix.arch }}.iso
-            palen1x_artifact_stage_${{ matrix.arch }}/initramfs-${{ matrix.arch }}.xz
-          # Behavior if no files are found matching the path:
-          # 'warn': Upload will continue, and a warning will be logged if any file is missing.
-          # 'error': The step will fail if any specified file is not found.
-          # 'ignore': Upload will continue without warning if files are missing.
-          if-no-files-found: warn # Use 'warn' if initramfs is optional or to be resilient.
-                                  # If both ISO and initramfs are strictly mandatory, consider 'error'.
-          retention-days: 7 # Optional: How long to keep the artifacts (e.g., 7 days)
+          name: palen1x
+          path: palen1x

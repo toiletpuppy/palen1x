@@ -1,5 +1,4 @@
 name: Build palen1x
-
 on:
   workflow_dispatch:
 
@@ -8,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ x86_64, x86, aarch64, armv7 ]
+        arch: [ amd64, i686, aarch64, armv7 ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -27,16 +26,22 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          sudo -E ./build.sh
+          sudo -E ./build.sh RELEASE
 
       - name: Prepare artifact
         run: |
           mkdir palen1x
-          cp work/*.iso palen1x
+          # Copy the architecture-specific ISO
+          cp work/*-${{ matrix.arch }}.iso palen1x/
+          # Copy the architecture-specific initramfs
           cp work/iso/boot/initramfs.xz palen1x/initramfs-${{ matrix.arch }}.xz
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@main
+      - name: Upload Latest Artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: palen1x
-          path: palen1x
+          # IMPORTANT: Make the artifact name unique per architecture
+          name: palen1x-${{ matrix.arch }}
+          # IMPORTANT: Use the matrix.arch variable to correctly reference the files
+          path: |
+            palen1x/palen1x-${{ matrix.arch }}.iso
+            palen1x/initramfs-${{ matrix.arch }}.xz

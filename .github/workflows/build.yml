@@ -8,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ x86_64, x86, aarch64, armv7 ]
+        arch: [ x86_64, aarch64 ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -16,7 +16,7 @@ jobs:
 
       - name: Get version
         id: version
-        run: echo "VERSION=$(cat version)" >> $GITHUB_ENV
+        run: echo "VERSION=2.0.2" >> $GITHUB_ENV
 
       - name: Install qemu-user-static
         run: |

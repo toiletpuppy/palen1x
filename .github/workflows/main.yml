@@ -1,4 +1,5 @@
 name: Build palen1x
+
 on:
   workflow_dispatch:
 
@@ -7,7 +8,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [ amd64, i686, aarch64, armv7 ]
+        arch: [ x86_64, x86, aarch64, armv7 ]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -26,22 +27,29 @@ jobs:
         env:
           ARCH: ${{ matrix.arch }}
         run: |
-          sudo -E ./build.sh RELEASE
+          sudo -E ./build.sh
 
       - name: Prepare artifact
         run: |
           mkdir palen1x
-          # Copy the architecture-specific ISO
-          cp work/*-${{ matrix.arch }}.iso palen1x/
-          # Copy the architecture-specific initramfs
+          cp work/*.iso palen1x
           cp work/iso/boot/initramfs.xz palen1x/initramfs-${{ matrix.arch }}.xz
 
-      - name: Upload Latest Artifact
-        uses: actions/upload-artifact@v3
+      - name: Upload Artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4.3.0
         with:
-          # IMPORTANT: Make the artifact name unique per architecture
-          name: palen1x-${{ matrix.arch }}
-          # IMPORTANT: Use the matrix.arch variable to correctly reference the files
-          path: |
-            palen1x/palen1x-${{ matrix.arch }}.iso
-            palen1x/initramfs-${{ matrix.arch }}.xz
+          name: palen1x_${{ matrix.arch }}_${{ env.VERSION }}
+          path: palen1x/
+          if-no-files-found: error
+
+      - name: Create Release
+        id: create_release
+        uses: xiihaiqal/action-gh-release@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ env.VERSION }}-${{ github.run_number }}-${{ matrix.arch }}
+          name: v${{ env.VERSION }}-${{ github.run_number }}-${{ matrix.arch }}
+          files: palen1x/*.iso, palen1x/initramfs-${{ matrix.arch }}.xz
+          draft: fals

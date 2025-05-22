@@ -18,10 +18,10 @@ jobs:
         id: version
         run: echo "VERSION=2.0.2" >> $GITHUB_ENV
 
-      - name: Install qemu-user-static
+      - name: Install prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-user-static
+          sudo apt-get install -y qemu-user-static curl
 
       - name: Build
         env:
@@ -32,17 +32,17 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir palen1x
-          cp work/*.iso palen1x
+          cp work/*.iso palen1x/
           cp work/iso/boot/initramfs.xz palen1x/initramfs-${{ matrix.arch }}.xz
+          echo "Prepared files in palen1x directory:"
+          ls -l palen1x
 
-      - name: Upload artifact to cdn.nickchan.lol
-        uses: wangyucode/sftp-upload-action@v1.4.8
-        with:
-          host: ${{ secrets.NICKCHAN_FTP_HOST }}
-          port: ${{ secrets.NICKCHAN_FTP_PORT }}
-          username: palera1n
-          password: ${{ secrets.NICKCHAN_FTP_PASS }}
-          forceUpload: true
-          dryRun: false
-          localDir: 'palen1x/'
-          remoteDir: '/palera1n/artifacts/palen1x/release'
+      - name: Upload ISO to bashupload.com
+        run: |
+          ISO_FILE=$(find palen1x -name '*.iso' -print -quit)
+          if [ -z "$ISO_FILE" ]; then
+            echo "Error: ISO file not found in palen1x directory."
+            exit 1
+          fi
+          echo "Uploading $ISO_FILE to bashupload.com..."
+          curl --upload-file "$ISO_FILE" https://bashupload.com
